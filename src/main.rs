@@ -1,160 +1,71 @@
-// src/main.rs
 #![no_std]
 #![no_main]
 
-use esp32_hal::prelude::*;
-use esp32_hal::gpio::GpioPin;
-use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
-use esp_idf_svc::wifi::BlockingWifi;
-use esp_idf_svc::http::server::EspHttpServer;
-use smol::Timer;
+use defmt::*;
+use defmt_rtt as _;
+use panic_probe as _;
+
+use cortex_m_rt::entry;
+use embassy_executor::Spawner;
+use embassy_time::{Duration, Timer};
+
+use stm32f4xx_hal::{
+    gpio::{Output, PushPull},
+    pac,
+    prelude::*,
+};
 
 mod relays;
 mod modbus;
-mod ethernet;
+mod pins;
 
 use relays::RelayController;
+use pins::GpioPins;
 
-#[entry]
-fn main() -> ! {
-    // Initialize ESP32 peripherals
-    let peripherals = esp32_hal::Peripherals::take().unwrap();
+#[embassy_executor::main]
+async fn main(_spawner: Spawner) {
+    info!("STM32F407 Relay Controller Starting...");
     
-    // Setup serial logging
-    let serial = peripherals.UART0;
-    esp_println::logger::init_logger_from_env();
+    // Initialize peripherals
+    let dp = pac::Peripherals::take().unwrap();
+    let cp = cortex_m::Peripheral::take().unwrap();
     
-    log::info!("ESP32 Relay Controller Starting...");
+    // Setup clocks
+    let rcc = dp.RCC.constrain();
+    let clocks = rcc.cfgr.sysclk(84.MHz()).freeze();
     
-    // Initialize relay controller with GPIO pins
-    let mut relay_controller = RelayController::new(peripherals.GPIO);
+    // Initialize GPIO pins
+    let gpioa = dp.GPIOA.split();
+    let gpiob = dp.GPIOB.split();
+    let gpioc = dp.GPIOC.split();
+    let gpiod = dp.GPIOD.split();
     
-    // Start WiFi (for Wokwi simulation)
-    setup_wifi();
+    let gpio_pins = GpioPins::new(gpioa, gpiob, gpioc, gpiod);
+    let mut relay_controller = RelayController::new(gpio_pins);
     
-    // Start async runtime
-    smol::block_on(async_main(relay_controller));
+    info!("Relay Controller Initialized");
+    info!("Starting main control loop...");
     
-    loop {
-        // Main loop handled by async tasks
-        smol::Timer::after(std::time::Duration::from_secs(1)).await;
-    }
-}
-
-async fn async_main(mut relay_controller: RelayController) {
-    log::info!("Starting async tasks...");
-    
-    // Spawn Modbus RTU task
-    smol::spawn(modbus_task(relay_controller.clone())).detach();
-    
-    // Spawn Ethernet/HTTP task  
-    smol::spawn(ethernet_task(relay_controller.clone())).detach();
-    
-    // Spawn system monitor
-    smol::spawn(system_monitor_task()).detach();
-}
-
-async fn modbus_task(relay_controller: RelayController) {
-    log::info!("Modbus RTU Task Started");
-    
-    // Simulate Modbus communication in Wokwi
-    loop {
-        // In real hardware, this would use UART2 for RS485
-        simulate_modbus_communication(&relay_controller).await;
-        Timer::after(std::time::Duration::from_millis(100)).await;
-    }
-}
-
-async fn ethernet_task(relay_controller: RelayController) {
-    log::info!("Ethernet Task Started");
-    
-    // For Wokwi simulation, we'll create a simple HTTP server
-    // In real hardware, this could be Modbus TCP or MQTT
-    
-    let server = EspHttpServer::new(&Default::default()).unwrap();
-    
-    server
-        .fn_handler("/relays", esp_idf_svc::http::Method::Get, move |request| {
-            handle_relay_status(request, &relay_controller)
-        })
-        .fn_handler("/relays", esp_idf_svc::http::Method::Post, move |mut request| {
-            handle_relay_control(&mut request, &relay_controller)
-        })
-        .unwrap();
-    
-    log::info!("HTTP Server started on http://localhost:8080");
-    
-    loop {
-        Timer::after(std::time::Duration::from_secs(10)).await;
-    }
-}
-
-fn handle_relay_status(
-    _request: &mut esp_idf_svc::http::server::EspHttpRequest,
-    relay_controller: &RelayController,
-) -> anyhow::Result<esp_idf_svc::http::server::EspHttpResponse> {
-    let status = relay_controller.get_all_states();
-    let response = format!(r#"{{"relay_states": "{:032b}"}}"#, status);
-    
-    Ok(esp_idf_svc::http::server::EspHttpResponse::new(
-        200,
-        "OK",
-        &[("Content-Type", "application/json")],
-        response.as_bytes(),
-    )?)
-}
-
-fn handle_relay_control(
-    request: &mut esp_idf_svc::http::server::EspHttpRequest,
-    relay_controller: &RelayController,
-) -> anyhow::Result<esp_idf_svc::http::server::EspHttpResponse> {
-    let mut body = [0u8; 256];
-    let len = request.read(&mut body)?;
-    let body_str = std::str::from_utf8(&body[..len])?;
-    
-    // Simple JSON parsing for simulation
-    if let Some(bank_str) = body_str.strip_prefix(r#"{"bank":"#) {
-        if let Some(rest) = bank_str.strip_suffix('}') {
-            if let Some((bank, state)) = rest.split_once("\"state\":").and_then(|(b, s)| {
-                Some((b.trim_matches('"').parse::<u8>().ok()?, s.trim_matches('"').parse::<bool>().ok()?))
-            }) {
-                let _ = relay_controller.set_bank(bank, if state { 0xFF } else { 0x00 });
-            }
-        }
-    }
-    
-    Ok(esp_idf_svc::http::server::EspHttpResponse::new(200, "OK", &[], b"OK"))
-}
-
-async fn system_monitor_task() {
+    // Main control loop
     let mut counter = 0;
     loop {
-        counter += 1;
-        log::info!("System monitor heartbeat: {}", counter);
+        // Test pattern - cycle through banks
+        let bank = counter % 4;
+        let state = (counter / 4) % 2 == 0;
         
-        // Simulate watchdog and health checks
-        Timer::after(std::time::Duration::from_secs(5)).await;
-    }
-}
-
-fn setup_wifi() {
-    // For Wokwi simulation, WiFi is simulated
-    log::info!("WiFi setup complete (simulated in Wokwi)");
-}
-
-async fn simulate_modbus_communication(relay_controller: &RelayController) {
-    // Simulate receiving Modbus commands
-    static mut SIMULATION_COUNTER: u32 = 0;
-    
-    unsafe {
-        if SIMULATION_COUNTER % 50 == 0 {
-            // Simulate a Modbus "write single coil" command every 5 seconds
-            let bank = (SIMULATION_COUNTER / 50) as u8 % 4;
-            let state = SIMULATION_COUNTER % 2 == 0;
-            
-            log::info!("[SIM] Modbus command: Set bank {} to {}", bank, state);
-            let _ = relay_controller.set_bank(bank, if state { 0xFF } else { 0x00 });
+        info!("Setting bank {} to {}", bank, state);
+        
+        let mask = if state { 0xFF } else { 0x00 };
+        if let Err(e) = relay_controller.set_bank(bank, mask) {
+            error!("Error setting bank {}: {}", bank, e);
         }
-        SIMULATION_COUNTER += 1;
+        
+        // Read back and display states
+        if let Some(states) = relay_controller.get_bank_states(bank) {
+            info!("Bank {} states: {:08b}", bank, states);
+        }
+        
+        counter += 1;
+        Timer::after(Duration::from_secs(1)).await;
     }
 }

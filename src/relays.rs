@@ -1,100 +1,88 @@
-// src/relays.rs
-use core::sync::atomic::{AtomicU32, Ordering};
-use heapless::Vec;
+use defmt::*;
+use embedded_hal::digital::OutputPin;
 
-pub struct RelayBank {
-    states: AtomicU32,
-    output_pins: Vec<&'static mut dyn OutputPin, 32>,
-}
+use crate::pins::GpioPins;
 
-impl RelayBank {
-    pub fn new(pins: Vec<&'static mut dyn OutputPin, 32>) -> Self {
-        Self {
-            states: AtomicU32::new(0),
-            output_pins: pins,
-        }
-    }
-
-    pub fn set_relay(&mut self, relay: u8, state: bool) -> Result<(), &'static str> {
-        if relay >= 32 {
-            return Err("Relay index out of bounds");
-        }
-
-        let mask = 1 << relay;
-        let current_states = self.states.load(Ordering::Acquire);
-        
-        let new_states = if state {
-            current_states | mask
-        } else {
-            current_states & !mask
-        };
-
-        // Update hardware
-        self.output_pins[relay as usize].set_state(state.into())?;
-        
-        // Update atomic state
-        self.states.store(new_states, Ordering::Release);
-        
-        Ok(())
-    }
-
-    pub fn set_bank(&mut self, mask: u32) -> Result<(), &'static str> {
-        for i in 0..32 {
-            let state = (mask & (1 << i)) != 0;
-            self.output_pins[i as usize].set_state(state.into())?;
-        }
-        self.states.store(mask, Ordering::Release);
-        Ok(())
-    }
-
-    pub fn get_states(&self) -> u32 {
-        self.states.load(Ordering::Acquire)
-    }
-
-    pub fn get_relay(&self, relay: u8) -> Option<bool> {
-        if relay >= 32 {
-            None
-        } else {
-            let states = self.states.load(Ordering::Acquire);
-            Some((states & (1 << relay)) != 0)
-        }
-    }
-}
-
-// Thread-safe relay controller
 pub struct RelayController {
-    banks: [RelayBank; 4],
+    gpio_pins: GpioPins,
+    bank_states: [u8; 4],
 }
 
 impl RelayController {
-    pub fn new() -> Self {
-        // Initialize with dummy pins for simulation
-        // In real hardware, these would be actual GPIO pins
-        let dummy_bank = RelayBank::new(Vec::new());
+    pub fn new(gpio_pins: GpioPins) -> Self {
+        info!("Initializing Relay Controller with 4 banks of 8 relays");
         Self {
-            banks: [dummy_bank; 4],
+            gpio_pins,
+            bank_states: [0; 4],
         }
     }
-
+    
     pub fn set_relay(&mut self, bank: u8, relay: u8, state: bool) -> Result<(), &'static str> {
         if bank >= 4 {
-            return Err("Bank index out of bounds");
+            return Err("Bank index must be 0-3");
         }
-        self.banks[bank as usize].set_relay(relay, state)
+        if relay >= 8 {
+            return Err("Relay index must be 0-7");
+        }
+        
+        // Update hardware
+        match bank {
+            0 => self.gpio_pins.set_bank0_relay(relay, state),
+            1 => self.gpio_pins.set_bank1_relay(relay, state),
+            2 => self.gpio_pins.set_bank2_relay(relay, state),
+            3 => self.gpio_pins.set_bank3_relay(relay, state),
+            _ => return Err("Invalid bank"),
+        }
+        
+        // Update software state
+        let bank_state = &mut self.bank_states[bank as usize];
+        if state {
+            *bank_state |= 1 << relay;
+        } else {
+            *bank_state &= !(1 << relay);
+        }
+        
+        info!("Set bank {}, relay {} to {}", bank, relay, state);
+        Ok(())
     }
-
+    
     pub fn set_bank(&mut self, bank: u8, mask: u8) -> Result<(), &'static str> {
         if bank >= 4 {
-            return Err("Bank index out of bounds");
+            return Err("Bank index must be 0-3");
         }
-        self.banks[bank as usize].set_bank(mask as u32)
+        
+        // Update all relays in bank
+        for relay in 0..8 {
+            let state = (mask & (1 << relay)) != 0;
+            self.set_relay(bank, relay, state)?;
+        }
+        
+        self.bank_states[bank as usize] = mask;
+        info!("Set bank {} to mask: {:08b}", bank, mask);
+        Ok(())
     }
-
+    
     pub fn get_bank_states(&self, bank: u8) -> Option<u8> {
         if bank >= 4 {
             None
         } else {
-            Some(self.banks[bank as usize].get_states() as u8)
+            Some(self.bank_states[bank as usize])
         }
+    }
+    
+    pub fn get_relay(&self, bank: u8, relay: u8) -> Option<bool> {
+        if bank >= 4 || relay >= 8 {
+            None
+        } else {
+            Some((self.bank_states[bank as usize] & (1 << relay)) != 0)
+        }
+    }
+    
+    pub fn get_all_states(&self) -> u32 {
+        let mut result = 0u32;
+        for (i, &state) in self.bank_states.iter().enumerate() {
+            result |= (state as u32) << (i * 8);
+        }
+        result
     }
 }
