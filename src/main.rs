@@ -1,13 +1,8 @@
 #![no_std]
 #![no_main]
 
-use defmt::*;
-use defmt_rtt as _;
-use panic_probe as _;
-
 use cortex_m_rt::entry;
-use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer};
+use panic_halt as _;
 
 use stm32f4xx_hal::{
     gpio::{Output, PushPull},
@@ -21,17 +16,14 @@ mod pins;
 use relays::RelayController;
 use pins::GpioPins;
 
-#[embassy_executor::main]
-async fn main(_spawner: Spawner) {
-    info!("STM32F407 Relay Controller Starting...");
-    
+#[entry]
+fn main() -> ! {
     // Initialize peripherals
     let dp = pac::Peripherals::take().unwrap();
-    let cp = cortex_m::Peripheral::take().unwrap();
     
     // Setup clocks
     let rcc = dp.RCC.constrain();
-    let clocks = rcc.cfgr.sysclk(84.MHz()).freeze();
+    let _clocks = rcc.cfgr.sysclk(84.MHz()).freeze();
     
     // Initialize GPIO pins
     let gpioa = dp.GPIOA.split();
@@ -42,23 +34,20 @@ async fn main(_spawner: Spawner) {
     let gpio_pins = GpioPins::new(gpioa, gpiob, gpioc, gpiod);
     let mut relay_controller = RelayController::new(gpio_pins);
     
-    info!("Relay Controller Initialized");
-    info!("Starting main control loop...");
-    
     // Main control loop
     let mut counter = 0;
     loop {
         let bank = counter % 4;
         let state = (counter / 4) % 2 == 0;
         
-        info!("Setting bank {} to {}", bank, state);
-        
         let mask = if state { 0xFF } else { 0x00 };
-        if let Err(e) = relay_controller.set_bank(bank, mask) {
-            error!("Error setting bank {}: {}", bank, e);
-        }
+        let _ = relay_controller.set_bank(bank, mask);
         
         counter += 1;
-        Timer::after(Duration::from_secs(1)).await;
+        
+        // Simple delay
+        for _ in 0..1_000_000 {
+            cortex_m::asm::nop();
+        }
     }
 }

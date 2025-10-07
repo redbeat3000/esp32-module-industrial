@@ -75,41 +75,41 @@ impl GpioPins {
     }
     
     pub fn set_bank0_relay(&mut self, relay: u8, state: bool) {
-        if relay < 8 {
+        if (relay as usize) < self.bank0.len() {
             if state {
-                self.bank0[relay as usize].set_high();
+                let _ = self.bank0[relay as usize].set_high();
             } else {
-                self.bank0[relay as usize].set_low();
+                let _ = self.bank0[relay as usize].set_low();
             }
         }
     }
     
     pub fn set_bank1_relay(&mut self, relay: u8, state: bool) {
-        if relay < 8 {
+        if (relay as usize) < self.bank1.len() {
             if state {
-                self.bank1[relay as usize].set_high();
+                let _ = self.bank1[relay as usize].set_high();
             } else {
-                self.bank1[relay as usize].set_low();
+                let _ = self.bank1[relay as usize].set_low();
             }
         }
     }
     
     pub fn set_bank2_relay(&mut self, relay: u8, state: bool) {
-        if relay < 8 {
+        if (relay as usize) < self.bank2.len() {
             if state {
-                self.bank2[relay as usize].set_high();
+                let _ = self.bank2[relay as usize].set_high();
             } else {
-                self.bank2[relay as usize].set_low();
+                let _ = self.bank2[relay as usize].set_low();
             }
         }
     }
     
     pub fn set_bank3_relay(&mut self, relay: u8, state: bool) {
-        if relay < 8 {
+        if (relay as usize) < self.bank3.len() {
             if state {
-                self.bank3[relay as usize].set_high();
+                let _ = self.bank3[relay as usize].set_high();
             } else {
-                self.bank3[relay as usize].set_low();
+                let _ = self.bank3[relay as usize].set_low();
             }
         }
     }
