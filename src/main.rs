@@ -16,7 +16,6 @@ use stm32f4xx_hal::{
 };
 
 mod relays;
-mod modbus;
 mod pins;
 
 use relays::RelayController;
@@ -49,7 +48,6 @@ async fn main(_spawner: Spawner) {
     // Main control loop
     let mut counter = 0;
     loop {
-        // Test pattern - cycle through banks
         let bank = counter % 4;
         let state = (counter / 4) % 2 == 0;
         
@@ -58,11 +56,6 @@ async fn main(_spawner: Spawner) {
         let mask = if state { 0xFF } else { 0x00 };
         if let Err(e) = relay_controller.set_bank(bank, mask) {
             error!("Error setting bank {}: {}", bank, e);
-        }
-        
-        // Read back and display states
-        if let Some(states) = relay_controller.get_bank_states(bank) {
-            info!("Bank {} states: {:08b}", bank, states);
         }
         
         counter += 1;
