@@ -25,18 +25,15 @@ fn main() -> ! {
     // Initialize peripherals
     let dp = pac::Peripherals::take().unwrap();
     
-    // Setup clocks - NEW API
+    // Setup clocks - CORRECT API
     let rcc = dp.RCC.constrain();
-    let clocks = rcc.cfgr.use_hse(8.MHz()).sysclk(84.MHz()).freeze();
+    let clocks = rcc.cfgr.sysclk(84.MHz()).freeze();
     
-    // Get SYSCFG for GPIO split
-    let mut syscfg = dp.SYSCFG.constrain();
-    
-    // Initialize GPIO pins with SYSCFG reference
-    let gpioa = dp.GPIOA.split(&mut syscfg);
-    let gpiob = dp.GPIOB.split(&mut syscfg);
-    let gpioc = dp.GPIOC.split(&mut syscfg);
-    let gpiod = dp.GPIOD.split(&mut syscfg);
+    // GPIO split doesn't need RCC parameter in newer versions
+    let gpioa = dp.GPIOA.split();
+    let gpiob = dp.GPIOB.split();
+    let gpioc = dp.GPIOC.split();
+    let gpiod = dp.GPIOD.split();
     
     let gpio_pins = GpioPins::new(gpioa, gpiob, gpioc, gpiod);
     let mut relay_controller = RelayController::new(gpio_pins);
