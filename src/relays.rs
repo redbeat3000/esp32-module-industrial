@@ -1,5 +1,4 @@
 use defmt::*;
-use embedded_hal::digital::OutputPin;
 
 use crate::pins::GpioPins;
 

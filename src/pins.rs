@@ -1,16 +1,16 @@
 use stm32f4xx_hal::{
-    gpio::{gpioa, gpiob, gpioc, gpiod, Output, PushPull},
+    gpio::{gpioa, gpiob, gpioc, gpiod, Output, PushPull, PartiallyErasedPin},
 };
 
 pub struct GpioPins {
     // Bank 0: PA0-PA7
-    pub bank0: [gpioa::PartiallyErasedPin<Output<PushPull>>; 8],
+    pub bank0: [PartiallyErasedPin<Output<PushPull>>; 8],
     // Bank 1: PB0-PB7  
-    pub bank1: [gpiob::PartiallyErasedPin<Output<PushPull>>; 8],
+    pub bank1: [PartiallyErasedPin<Output<PushPull>>; 8],
     // Bank 2: PC0-PC7
-    pub bank2: [gpioc::PartiallyErasedPin<Output<PushPull>>; 8],
+    pub bank2: [PartiallyErasedPin<Output<PushPull>>; 8],
     // Bank 3: PD0-PD7
-    pub bank3: [gpiod::PartiallyErasedPin<Output<PushPull>>; 8],
+    pub bank3: [PartiallyErasedPin<Output<PushPull>>; 8],
 }
 
 impl GpioPins {
