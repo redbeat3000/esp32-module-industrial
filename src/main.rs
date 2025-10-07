@@ -25,12 +25,12 @@ fn main() -> ! {
     // Initialize peripherals
     let dp = pac::Peripherals::take().unwrap();
     
-    // Setup clocks - get RCC from SYSCFG
+    // Setup clocks - FIXED: use cfgr() method
     let rcc = dp.RCC.constrain();
-    let clocks = rcc.cfgr.sysclk(84.MHz()).freeze();
+    let clocks = rcc.cfgr().sysclk(84.MHz()).freeze();
     
     // Get RCC for GPIO split
-    let mut rcc = unsafe { pac::Peripherals::steal().RCC };
+    let mut rcc = dp.RCC; // Use the RCC from peripherals
     
     // Initialize GPIO pins with RCC reference
     let gpioa = dp.GPIOA.split(&mut rcc);
